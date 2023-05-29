@@ -122,7 +122,7 @@ def set_weights(match_obj, wave_progress):
 
 class Script(scripts.Script):
     def title(self):
-        return "Loopback Wave V1.4.1"
+        return "Loopback Morph V0.1.0"
 
     def show(self, is_img2img):
         return is_img2img
@@ -136,6 +136,8 @@ class Script(scripts.Script):
 
         save_prompts = gr.Checkbox(label='Save prompts as text file', value=True)
         prompts = gr.Textbox(label="Prompt Changes", lines=5, value="")
+        #neg_prompt_help = gr.HTML("<p style=\"margin-bottom:0.75em\">If positive prompt count > negative prompt count, last negative prompt will be used for the remaining prompts.</p>")
+        negative_prompts = gr.Textbox(label="Negative Prompt Changes", lines=5, value="")
 
         save_video = gr.Checkbox(label='Save results as video', value=True)
         output_dir = gr.Textbox(label="Video Name", lines=1, value="")
@@ -148,9 +150,9 @@ class Script(scripts.Script):
         video_segment_duration = gr.Slider(minimum=10, maximum=60, step=1, label='Video Segment Duration (seconds)', value=20)
 
 
-        return [frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset,initial_image_number, prompts, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration]
+        return [frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset,initial_image_number, prompts, negative_prompts, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration]
 
-    def run(self, p, frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset, initial_image_number, prompts: str,save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration):
+    def run(self, p, frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset, initial_image_number, prompts: str, negative_prompts: str, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration):
         processing.fix_seed(p)
         batch_count = p.n_iter
         p.extra_generation_params = {
@@ -185,17 +187,17 @@ class Script(scripts.Script):
         else:
             output_dir = output_dir + "-" + str(p.seed)
 
-        loopback_wave_path = os.path.join(p.outpath_samples, "loopback-wave")
-        loopback_wave_images_path = os.path.join(loopback_wave_path, output_dir)
+        loopback_morph_path = os.path.join(p.outpath_samples, "loopback-morph")
+        loopback_morph_images_path = os.path.join(loopback_morph_path, output_dir)
 
-        os.makedirs(loopback_wave_images_path, exist_ok=True)
+        os.makedirs(loopback_morph_images_path, exist_ok=True)
 
-        p.outpath_samples = loopback_wave_images_path
+        p.outpath_samples = loopback_morph_images_path
         
         prompts = prompts.strip()
         
         if save_prompts:
-            with open(loopback_wave_images_path + "-prompts.txt", "w") as f:
+            with open(loopback_morph_images_path + "-prompts.txt", "w") as f:
                 generation_settings = [
                   "Generation Settings",
                   f"Total Frames: {frames}",
@@ -228,7 +230,9 @@ class Script(scripts.Script):
                   "Negative Prompt:" + p.negative_prompt,
                   "",
                   "Frame change prompts:",
-                  prompts
+                  prompts,
+                  "Frame change negative prompts:",
+                  negative_prompts
                 ]
                   
 
@@ -239,14 +243,29 @@ class Script(scripts.Script):
             lines = prompts.split("\n")
             for prompt_line in lines:
               params = prompt_line.split("::")
+              if len(params) > 0:
+                changes_dict[params[0]] = {}
               if len(params) == 2:
-                changes_dict[params[0]] = { "prompt": params[1] }
+                changes_dict[params[0]]["prompt"] = params[1]
               elif len(params) == 3:
-                changes_dict[params[0]] = { "seed": params[1], "prompt": params[2] }
+                changes_dict[params[0]]["seed"] = params[1]
+                changes_dict[params[0]]["prompt"] = params[2]
               else:
                 raise IOError(f"Invalid input in prompt line: {prompt_line}")
+
+        if negative_prompts:
+            lines = negative_prompts.split("\n")
+            for prompt_line in lines:
+              params = prompt_line.split("::")
+              if len(params) > 0 and params[0] not in changes_dict:
+                changes_dict[params[0]] = {}
+              if len(params) == 2:
+                changes_dict[params[0]]["negative_prompt"] = params[1]
+              else:
+                raise IOError(f"Invalid input in negative prompt line: {prompt_line}")
         
         raw_prompt = p.prompt
+        raw_neg_prompt = p.negative_prompt
                 
         for n in range(batch_count):
             history = []
@@ -262,8 +281,18 @@ class Script(scripts.Script):
                 state.job = ""
                 
                 if str(i) in changes_dict:
-                  raw_prompt = changes_dict[str(i)]["prompt"]
-                  state.job = "New prompt: %s\n" % raw_prompt
+                  if "prompt" in changes_dict[str(i)]:
+                    raw_prompt = changes_dict[str(i)]["prompt"]
+                    if "negative_prompt" not in changes_dict[str(i)]:
+                      state.job = f"New prompt: {raw_prompt}\n"
+
+                  if "negative_prompt" in changes_dict[str(i)]:
+                    raw_neg_prompt = changes_dict[str(i)]["negative_prompt"]
+                    if "prompt" not in changes_dict[str(i)]:
+                      state.job = f"New negative prompt: {raw_neg_prompt}\n"
+
+                  if "prompt" in changes_dict[str(i)] and "negative_prompt" in changes_dict[str(i)]:
+                    state.job = f"New prompt and negative prompt:\n Prompt: {raw_prompt}\n Negative prompt: {raw_neg_prompt}\n"
                                     
                   if "seed" in changes_dict[str(i)]:
                     current_seed = changes_dict[str(i)]["seed"]
@@ -295,8 +324,12 @@ class Script(scripts.Script):
                 new_prompt = re.sub(wave_completed_regex, lambda x: set_weights(x, wave_progress), raw_prompt)
                 new_prompt = re.sub(wave_remaining_regex, lambda x: set_weights(x, 1 - wave_progress), new_prompt)
                 p.prompt = new_prompt
+                new_neg_prompt = re.sub(wave_completed_regex, lambda x: set_weights(x, wave_progress), raw_neg_prompt)
+                new_neg_prompt = re.sub(wave_remaining_regex, lambda x: set_weights(x, 1 - wave_progress), new_neg_prompt)
+                p.negative_prompt = new_neg_prompt
                 
-                print(new_prompt)
+                print("Prompt: " + new_prompt)
+                print("Negative prompt: " + new_neg_prompt)
 
                 denoising_strength_change_rate = 180/frames_per_wave
 
@@ -338,8 +371,8 @@ class Script(scripts.Script):
         if save_video:
             now = datetime.now() # get the current date and time
             date_string = now.strftime("%Y-%m-%d")
-            input_pattern = os.path.join(loopback_wave_images_path, date_string,"%d.png")
-            encode_video(input_pattern, initial_image_number, loopback_wave_images_path, video_fps, video_quality, video_encoding, segment_video, video_segment_duration, ffmpeg_path)
+            input_pattern = os.path.join(loopback_morph_images_path, date_string,"%d.png")
+            encode_video(input_pattern, initial_image_number, loopback_morph_images_path, video_fps, video_quality, video_encoding, segment_video, video_segment_duration, ffmpeg_path)
                     
         processed = Processed(p, all_images, initial_seed, initial_info)
 

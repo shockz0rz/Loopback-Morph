@@ -9,19 +9,19 @@ This script is intended to be an enhanced version of the original Loopback Wave 
 
 * Alternative denoising strength functions - select between Cosine Spike (the original Loopback Wave function), Sinewave, Linear Spike, Linear Continuous, Sigmoid, Inverse Sigmoid, and Flat.
 
-** Cosine Spike: The original Loopback Wave function. Gradual increase in denoise strength through about the first quarter of a wave, then linear-ish increase to maximum at the halfway point, then linearish decrease until 3/4 through, then gradual decrease to mininmum. Takes a while to get up to even half of the maximum strength so it may spend a lot of frames making relatively minor changes. But it doesn't loiter at high strengths for long, so it's useful for avoiding too many drastic changes to the original pic.
+  * Cosine Spike: The original Loopback Wave function. Gradual increase in denoise strength through about the first quarter of a wave, then linear-ish increase to maximum at the halfway point, then linearish decrease until 3/4 through, then gradual decrease to mininmum. Takes a while to get up to even half of the maximum strength so it may spend a lot of frames making relatively minor changes. But it doesn't loiter at high strengths for long, so it's useful for avoiding too many drastic changes to the original pic.
 
-** Sinewave: Exactly what it says on the tin - a plain old sinewave from minimum strength at the beginning of a wave to maximum at 0.5, then back down to minimum. Gets up to useful denoise strengths faster than Cosine Spike, but also stays at relatively high strengths for longer periods of time - may result in too-drastic shifts away from the original image.
+  * Sinewave: Exactly what it says on the tin - a plain old sinewave from minimum strength at the beginning of a wave to maximum at 0.5, then back down to minimum. Gets up to useful denoise strengths faster than Cosine Spike, but also stays at relatively high strengths for longer periods of time - may result in too-drastic shifts away from the original image.
 
-** Linear Spike: Linearly increases strength with each frame up to a maximum halfway through the wave, then linear decrease down to minimum. Gets up to medium strength faster than Sinewave and doesn't stay at high strength for as long, but still stays at high strength longer than Cosine Spike. 
+  * Linear Spike: Linearly increases strength with each frame up to a maximum halfway through the wave, then linear decrease down to minimum. Gets up to medium strength faster than Sinewave and doesn't stay at high strength for as long, but still stays at high strength longer than Cosine Spike. 
 
-** Linear Continuous: Linearly increases strength through the entire wave, then resets to minimum. Not super useful IMO, but maybe you can find a use for it!
+  * Linear Continuous: Linearly increases strength through the entire wave, then resets to minimum. Not super useful IMO, but maybe you can find a use for it!
 
-** Sigmoid: Stays at low strength for a while, then very quickly increases to near-maximum strength at about 1/4 through the wave, stays there until around 3/4 through, then quickly decreases back down to mininum. Could be useful if you have a high minimum denoise strength.
+  * Sigmoid: Stays at low strength for a while, then very quickly increases to near-maximum strength at about 1/4 through the wave, stays there until around 3/4 through, then quickly decreases back down to mininum. Could be useful if you have a high minimum denoise strength.
 
-** Inverse Sigmoid: My new favorite! Very quickly jumps up to about halfway between minimum and maximum and stays there for most of the wave, then jumps up to near maximum at close to the halfway point, then jumps back down to the halfway point. Keeps the 'spike' behavior of Cosine Spike that helps make major changes, but wastes less time at lower strength.
+  * Inverse Sigmoid: My new favorite! Very quickly jumps up to about halfway between minimum and maximum and stays there for most of the wave, then jumps up to near maximum at close to the halfway point, then jumps back down to the halfway point. Keeps the 'spike' behavior of Cosine Spike that helps make major changes, but wastes less time at lower strength.
 
-** Flat: Just keeps your default denoise strength and ignores the 'maximum additional' slider. Basically the same as using the default Loopback script. May come in handy once future fancy features are implemented.
+  * Flat: Just keeps your default denoise strength and ignores the 'maximum additional' slider. Basically the same as using the default Loopback script. May come in handy once future fancy features are implemented.
 
 ### Feature roadmap:
 

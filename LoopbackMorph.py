@@ -23,6 +23,14 @@ import subprocess
 wave_completed_regex = r'@wave_completed\(([\-]?[0-9]*\.?[0-9]+), ?([\-]?[0-9]*\.?[0-9]+)\)'
 wave_remaining_regex = r'@wave_remaining\(([\-]?[0-9]*\.?[0-9]+), ?([\-]?[0-9]*\.?[0-9]+)\)'
 
+COS_SPIKE_KEY="Cosine Spike"
+SINEWAVE_KEY="Sinewave"
+LIN_SPIKE_KEY="Linear Spike"
+LIN_CONT_KEY="Linear Continuous"
+FLAT_KEY="Flat"
+SIGMOID_KEY="Sigmoid"
+INVERSE_SIGMOID_KEY="Inverse Sigmoid"
+
 def run_cmd(cmd):
     cmd = list(map(lambda arg: str(arg), cmd))
     print("Executing %s" % " ".join(cmd))
@@ -119,6 +127,35 @@ def set_weights(match_obj, wave_progress):
   weight = min_weight + weight_range * wave_progress
   return str(weight)
 
+def get_denoise_str_multiplier_cosine_spike( wave_progress ):
+  return 1.0 - abs(math.cos(math.pi * wave_progress))
+   
+def get_denoise_str_multiplier_sinewave( wave_progress ):
+  return 0.5 * (1.0 - math.sin(2.0 * math.pi * (wave_progress + 0.25)))
+
+def get_denoise_str_multiplier_linear_spike( wave_progress ):
+  return 1.0 - abs((-2.0 * wave_progress ) + 1 )
+
+#TODO: implement multiplier selection
+def get_denoise_str_multiplier_sigmoid( wave_progress ):
+  if wave_progress <= 0.0 or wave_progress >= 1.0:
+    return 0.0
+  elif wave_progress < 0.5:
+    return (math.atan( 32.0 * ( wave_progress - 0.25 )) / math.pi) + 0.5
+  elif wave_progress > 0.5:
+    return (math.atan( 32.0 * ( 0.75 - wave_progress )) / math.pi) + 0.5
+  else: # hopefully wave_progress == 0.5:
+    return 1.0
+
+def get_denoise_str_multiplier_inverse_sigmoid( wave_progress ):
+  if wave_progress <= 0.0 or wave_progress >= 1.0:
+    return 0.0
+  elif wave_progress < 0.5:
+    return float(np.clip((0.03125 * math.tan(math.pi * ( 2.0 * wave_progress - 0.5 ))) + 0.5, 0.0, 1.0))
+  elif wave_progress > 0.5:
+    return float(np.clip((0.03125 * math.tan(math.pi * ( -2.0 * wave_progress - 0.5 ))) + 0.5, 0.0, 1.0))
+  else: # hopefully wave_progress == 0.5:
+    return 1.0
 
 class Script(scripts.Script):
     def title(self):
@@ -131,7 +168,8 @@ class Script(scripts.Script):
         frames = gr.Slider(minimum=1, maximum=2048, step=1, label='Frames', value=100)
         frames_per_wave = gr.Slider(minimum=0, maximum=120, step=1, label='Frames Per Wave', value=20)
         denoising_strength_change_amplitude = gr.Slider(minimum=0, maximum=1, step=0.01, label='Max additional denoise', value=0.6)
-        denoising_strength_change_offset = gr.Number(minimum=0, maximum=180, step=1, label='Wave offset (ignore this if you don\'t know what it means)', value=0)
+        denoising_strength_frame_offset = gr.Number(minimum=-60, maximum=60, step=1, label='Wave offset (ignore this if you don\'t know what it means)', value=0)
+        denoising_strength_change_function = gr.Dropdown( label="Denoise function", choices=[COS_SPIKE_KEY, SINEWAVE_KEY, LIN_SPIKE_KEY, LIN_CONT_KEY, FLAT_KEY, SIGMOID_KEY, INVERSE_SIGMOID_KEY], value=COS_SPIKE_KEY)
         initial_image_number = gr.Number(minimum=0, label='Initial generated image number', value=0)
 
         save_prompts = gr.Checkbox(label='Save prompts as text file', value=True)
@@ -150,15 +188,15 @@ class Script(scripts.Script):
         video_segment_duration = gr.Slider(minimum=10, maximum=60, step=1, label='Video Segment Duration (seconds)', value=20)
 
 
-        return [frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset,initial_image_number, prompts, negative_prompts, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration]
+        return [frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_frame_offset, denoising_strength_change_function, initial_image_number, prompts, negative_prompts, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration]
 
-    def run(self, p, frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_change_offset, initial_image_number, prompts: str, negative_prompts: str, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration):
+    def run(self, p, frames, denoising_strength_change_amplitude, frames_per_wave, denoising_strength_frame_offset, denoising_strength_change_function, initial_image_number, prompts: str, negative_prompts: str, save_prompts, save_video, output_dir, video_fps, video_quality, video_encoding, ffmpeg_path, segment_video, video_segment_duration):
         processing.fix_seed(p)
         batch_count = p.n_iter
         p.extra_generation_params = {
             "Max Additional Denoise": denoising_strength_change_amplitude,
             "Frames per wave": frames_per_wave,
-            "Wave Offset": denoising_strength_change_offset,
+            "Wave Offset": denoising_strength_frame_offset,
         }
 
         # We save them ourselves for the sake of ffmpeg
@@ -202,7 +240,7 @@ class Script(scripts.Script):
                   "Generation Settings",
                   f"Total Frames: {frames}",
                   f"Frames Per Wave: {frames_per_wave}",
-                  f"Wave Offset: {denoising_strength_change_offset}",
+                  f"Wave Offset: {denoising_strength_frame_offset}",
                   f"Base Denoising Strength: {initial_denoising_strength}",
                   f"Max Additional Denoise: {denoising_strength_change_amplitude}",
                   f"Initial Image Number: {initial_image_number}",
@@ -319,8 +357,8 @@ class Script(scripts.Script):
                     p.color_corrections = initial_color_corrections
                     
                     
-                wave_progress = float(1)/(float(frames_per_wave - 1))*float(((float(i)%float(frames_per_wave)) + ((float(1)/float(180))*denoising_strength_change_offset)))
-                print(wave_progress)
+                wave_progress = float((i + denoising_strength_frame_offset + 1) % frames_per_wave ) / float(frames_per_wave)
+                print("Wave progress: " + str(wave_progress))
                 new_prompt = re.sub(wave_completed_regex, lambda x: set_weights(x, wave_progress), raw_prompt)
                 new_prompt = re.sub(wave_remaining_regex, lambda x: set_weights(x, 1 - wave_progress), new_prompt)
                 p.prompt = new_prompt
@@ -331,10 +369,23 @@ class Script(scripts.Script):
                 print("Prompt: " + new_prompt)
                 print("Negative prompt: " + new_neg_prompt)
 
-                denoising_strength_change_rate = 180/frames_per_wave
-
-                cos = abs(math.cos(math.radians(i*denoising_strength_change_rate + denoising_strength_change_offset)))
-                p.denoising_strength = initial_denoising_strength + denoising_strength_change_amplitude - (cos * denoising_strength_change_amplitude)
+                if denoising_strength_change_function == COS_SPIKE_KEY:
+                  denoise_multiplier = get_denoise_str_multiplier_cosine_spike(wave_progress)
+                elif denoising_strength_change_function == SINEWAVE_KEY:
+                  denoise_multiplier = get_denoise_str_multiplier_sinewave(wave_progress)
+                elif denoising_strength_change_function == LIN_SPIKE_KEY:
+                  denoise_multiplier = get_denoise_str_multiplier_linear_spike(wave_progress)
+                elif denoising_strength_change_function == SIGMOID_KEY:
+                  denoise_multiplier = get_denoise_str_multiplier_sigmoid(wave_progress)
+                elif denoising_strength_change_function == INVERSE_SIGMOID_KEY:
+                  denoise_multiplier = get_denoise_str_multiplier_inverse_sigmoid(wave_progress)
+                elif denoising_strength_change_function == FLAT_KEY:
+                  denoise_multiplier = 0.0
+                else: #hopefully denoising_strength_change_function == LIN_CONT_KEY:
+                  denoise_multiplier = wave_progress
+                   
+                p.denoising_strength = initial_denoising_strength + (denoising_strength_change_amplitude * denoise_multiplier)
+                print( f"Denoising strength: {p.denoising_strength}")
 
                 state.job += f"Iteration {i + 1}/{frames}, batch {n + 1}/{batch_count}. Denoising Strength: {p.denoising_strength}"
 

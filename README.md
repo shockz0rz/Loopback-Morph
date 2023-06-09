@@ -31,6 +31,8 @@ This script is intended to be an enhanced version of the original Loopback Wave 
 
 * Video frame interpolation: Make smoother output videos
 
+* Inpaint smoothing: Repeated inpainting tends to create ugly, obvious borders even when adding blur to the mask. This seems like something that should be fixable.
+
 * ??
 
 ## Original README by FizzleDorf
